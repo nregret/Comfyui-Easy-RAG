@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "comfyui-easy-rag-lmstudio"
+version = "1.0.0"
+description = "ComfyUI local RAG nodes with FAISS, sentence-transformers, and LM Studio OpenAI-compatible API."
+readme = "README.md"
+requires-python = ">=3.10"
+dynamic = ["dependencies"]
+classifiers = [
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
+[tool.setuptools.dynamic]
+dependencies = { file = ["requirements.txt"] }
+
+[project.urls]
+Repository = "https://github.com/nregret/Comfyui-Easy-RAG"
+Documentation = "https://github.com/nregret/Comfyui-Easy-RAG#readme"
+"Bug Tracker" = "https://github.com/nregret/Comfyui-Easy-RAG/issues"
+
+[tool.comfy]
+PublisherId = "nnegret"
+DisplayName = "ComfyUI Easy RAG"

@@ -1,0 +1,7 @@
+.gitignore
+README.md
+__init__.py
+nodes.py
+rag_core.py
+requirements.txt
+web/easyrag_upload.js

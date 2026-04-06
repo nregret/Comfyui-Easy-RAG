@@ -146,7 +146,7 @@ def _load_documents_from_targets(targets: List[Path]) -> tuple[List[Dict], List[
             continue
         try:
             doc = load_single_document(p, encoding="utf-8")
-            if doc.get("text"):
+            if doc.get("text") or doc.get("chunks"):
                 doc["role"] = _infer_role(p.name)
                 documents.append(doc)
         except Exception as e:
@@ -1093,6 +1093,7 @@ class TwoStageRAGNode:
             except Exception:
                 pass
 
+        _log(f"[Stage2] inference_output_len={len(response['answer'])}")
         extracted_answer = _sanitize_final_output(response["answer"])
         if not extracted_answer:
             extracted_answer = t(
@@ -1103,6 +1104,110 @@ class TwoStageRAGNode:
         return (extracted_answer, debug_out)
 
 
+def _log(msg: str):
+    print(f"[EasyRAG] {msg}")
+
+
+def _sanitize_final_output(text: str) -> str:
+    # 提取核心内容并清理常见的标签后缀
+    raw = extract_answer_between_newlines(text)
+    # 针对 Z-Image 的特定清理逻辑：移除可能出现的引导性前缀
+    prefixes = [
+        "提示词：", "正文：", "输出：", "Prompt:", "Output:", 
+        "生成的提示词如下：", "最终提示词如下：", "【最终结果】",
+        "Generated Prompt:", "Final Prompt:"
+    ]
+    for p in prefixes:
+        if raw.startswith(p):
+            raw = raw[len(p):].strip()
+            break
+    return raw.strip()
+
+
+class EasyRAGRetrieverNode:
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "question": ("STRING", {"multiline": True, "default": ""}),
+                "rag_index": ("RAG_INDEX",),
+                "top_k": ("INT", {"default": 3, "min": 1, "max": 50, "step": 1}),
+                "rewrite_query": (
+                    "BOOLEAN",
+                    {"default": False, "label_on": "开启重写", "label_off": "关闭重写"},
+                ),
+                "base_url": ("STRING", {"default": "http://127.0.0.1:1234"}),
+                "model": (
+                    _list_lmstudio_models_for_ui(),
+                    {"tooltip": "LLM model for rewriting the query"},
+                ),
+                "system_prompt": (
+                    "STRING",
+                    {
+                        "multiline": True,
+                        "default": "You are a query rewriter. Rewrite the user's input into a high-quality search query for a vector database.",
+                    },
+                ),
+                # 新增：卸载开关
+                "unload_model_after_response": (
+                    "BOOLEAN",
+                    {"default": False, "label_on": t("Unload Model"), "label_off": t("Keep Model")},
+                ),
+            }
+            
+        }
+
+    RETURN_TYPES = ("STRING", "INT")
+    RETURN_NAMES = ("retrieved_context", "count")
+    FUNCTION = "retrieve"
+    CATEGORY = "EasyRAG"
+
+    def retrieve(
+        self, question, rag_index, top_k, rewrite_query, base_url, model, system_prompt, unload_model_after_response
+    ):
+        if not (question or "").strip():
+            return ("", 0)
+
+        search_query = question.strip()
+        selected_model = model
+
+        if rewrite_query:
+            try:
+                response = lmstudio_chat(
+                    base_url=base_url,
+                    model=model,
+                    question=question,
+                    system_prompt=system_prompt,
+                    temperature=0.1,
+                    max_tokens=200,
+                    stream=False,
+                )
+                search_query = extract_answer_between_newlines(response["answer"])
+                selected_model = response.get("model") or model
+                print(f"[EasyRAG][Retriever] Rewritten query: {search_query}")
+            except Exception as e:
+                print(f"[EasyRAG][Retriever] Query rewrite failed: {e}")
+
+        index_ref = rag_index.get("index_dir") or rag_index.get("index_name")
+        result = search_index(
+            index_ref, query=search_query, top_k=int(top_k), device="cpu"
+        )
+
+                # 运行后卸载逻辑
+        if unload_model_after_response and rewrite_query and selected_model:
+            try:
+                from .rag_core import unload_lmstudio_model
+                unload_lmstudio_model(base_url, selected_model)
+            except Exception as e:
+                print(f"[EasyRAG][Retriever] Unload model failed: {e}")
+
+        items = result.get("items", [])
+        context_parts = [item["text"] for item in items]
+        context = "\n\n".join(context_parts)
+
+        return (context, len(items))
+
+
 NODE_CLASS_MAPPINGS = {
     "EasyRAGDocumentLoader": DocumentLoaderNode,
     "EasyRAGPrebuiltLibrary": EasyRAGPrebuiltLibraryNode,
@@ -1110,6 +1215,7 @@ NODE_CLASS_MAPPINGS = {
     "EasyRAGLMStudioChatAdvanced": LMStudioRAGChatNode,
     "EasyRAGLMStudioChatSimple": LMStudioRAGChatSimpleNode,
     "EasyRAGTwoStageRAG": TwoStageRAGNode,
+    "EasyRAGRetriever": EasyRAGRetrieverNode,
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
@@ -1119,4 +1225,5 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "EasyRAGLMStudioChatAdvanced": "EasyRAG - LM Studio API (Advanced)",
     "EasyRAGLMStudioChatSimple": "EasyRAG - LM Studio API (Simple)",
     "EasyRAGTwoStageRAG": "EasyRag-Zimage-2步检索推理",
+    "EasyRAGRetriever": "EasyRAG - Vector Library Retriever",
 }

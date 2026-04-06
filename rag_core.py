@@ -82,10 +82,30 @@ def load_single_document(path: Path, encoding: str = "utf-8") -> Dict:
     if ext in {".txt", ".md"}:
         text = _safe_read_text(path, encoding=encoding)
     elif ext == ".json":
-        text = parse_json_to_text(_safe_read_text(path, encoding=encoding))
+        raw = _safe_read_text(path, encoding=encoding)
+        try:
+            obj = json.loads(raw)
+            # 检测是否为预分块格式：一个包含字典的列表，且每个字典有 content 或 text 字段
+            if (
+                isinstance(obj, list)
+                and obj
+                and isinstance(obj[0], dict)
+                and ("content" in obj[0] or "text" in obj[0])
+            ):
+                return {
+                    "source": str(path),
+                    "extension": ext,
+                    "chunks": obj,  # 存储原始分块列表
+                    "text": "[Pre-chunked JSON Document]",  # 占位符
+                    "title": path.name,
+                }
+        except Exception:
+            pass
+        text = parse_json_to_text(raw)
     elif ext == ".pdf":
         text = _read_pdf(path)
     else:
+        # 兜底，理论上不会发生，因为前面有 SUPPORTED_EXTENSIONS 检查
         text = ""
 
     return {
@@ -387,6 +407,32 @@ def build_faiss_index(
     embedder = EmbeddingBackend(embedding_model)
     chunks: List[Dict] = []
     for doc_id, doc in enumerate(documents):
+        # 优先检查是否为预分块文档
+        pre_chunks = doc.get("chunks")
+        if isinstance(pre_chunks, list):
+            for i, cdata in enumerate(pre_chunks):
+                if not isinstance(cdata, dict):
+                    continue
+                content = (cdata.get("content") or cdata.get("text") or "").strip()
+                if not content:
+                    continue
+                
+                chunk_obj = {
+                    "chunk_id": len(chunks),
+                    "doc_id": doc_id,
+                    "source": doc.get("source", ""),
+                    "title": doc.get("title", ""),
+                    "text": content,
+                    "position": i,
+                    "doc_role": doc.get("role", "general"),
+                }
+                # 保留原始 metadata（如果存在）
+                if "metadata" in cdata and isinstance(cdata["metadata"], dict):
+                    chunk_obj["metadata"] = cdata["metadata"]
+                
+                chunks.append(chunk_obj)
+            continue
+
         text = (doc.get("text") or "").strip()
         if not text:
             continue

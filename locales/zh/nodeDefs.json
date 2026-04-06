@@ -221,5 +221,43 @@
         "name": "摘要"
       }
     }
+  },
+  "EasyRAGRetriever": {
+    "display_name": "EasyRAG - 向量库检索(专用)",
+    "description": "专用的向量库检索节点，支持通过 LLM 进行可选的查询重写（Query Rewrite）。",
+    "inputs": {
+      "question": {
+        "name": "问题"
+      },
+      "rag_index": {
+        "name": "RAG 索引"
+      },
+      "top_k": {
+        "name": "检索数量"
+      },
+      "rewrite_query": {
+        "name": "开启查询重写"
+      },
+      "base_url": {
+        "name": "服务地址"
+      },
+      "model": {
+        "name": "模型"
+      },
+      "system_prompt": {
+        "name": "查询重写提示词"
+      },
+      "unload_model_after_response": {
+        "name": "回答后卸载模型"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "检索内容"
+      },
+      "1": {
+        "name": "命中的数量"
+      }
+    }
   }
 }

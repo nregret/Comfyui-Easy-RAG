@@ -82,5 +82,10 @@
   "enabled": "enabled",
   "Uploaded document": "Uploaded document",
   "文档上传失败: {error}": "Document upload failed: {error}",
-  "上传文档": "Upload document"
+  "上传文档": "Upload document",
+  "EasyRAG - Vector Library Retriever": "EasyRAG - Vector Library Retriever",
+  "Enable Rewrite": "Enable Rewrite",
+  "Disable Rewrite": "Disable Rewrite",
+  "Unload Model": "Unload Model",
+  "Keep Model": "Keep Model"
 }

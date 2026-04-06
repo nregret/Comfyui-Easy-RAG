@@ -83,5 +83,10 @@
   "Uploaded document": "Uploaded document",
   "Document upload failed: {error}": "文档上传失败: {error}",
   "Upload document": "上传文档",
-  "上传文档": "上传文档"
+  "上传文档": "上传文档",
+  "EasyRAG - Vector Library Retriever": "EasyRAG - 向量库检索(专用)",
+  "Enable Rewrite": "开启重写",
+  "Disable Rewrite": "关闭重写",
+  "Unload Model": "卸载模型",
+  "Keep Model": "保留模型"
 }

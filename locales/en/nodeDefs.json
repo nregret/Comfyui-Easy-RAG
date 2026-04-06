@@ -221,5 +221,43 @@
         "name": "Summary"
       }
     }
+  },
+  "EasyRAGRetriever": {
+    "display_name": "EasyRAG - Vector Library Retriever",
+    "description": "Specialized vector library search node with optional LLM query rewriting.",
+    "inputs": {
+      "question": {
+        "name": "Question"
+      },
+      "rag_index": {
+        "name": "RAG Index"
+      },
+      "top_k": {
+        "name": "Retrieve Quantity"
+      },
+      "rewrite_query": {
+        "name": "Enable Query Rewrite"
+      },
+      "base_url": {
+        "name": "Base URL"
+      },
+      "model": {
+        "name": "Model"
+      },
+      "system_prompt": {
+        "name": "Rewrite System Prompt"
+      },
+      "unload_model_after_response": {
+        "name": "Unload Model After Response"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "Context"
+      },
+      "1": {
+        "name": "Hit Count"
+      }
+    }
   }
 }

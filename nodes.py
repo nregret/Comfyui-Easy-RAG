@@ -11,6 +11,12 @@ import numpy as np
 from PIL import Image
 import torch
 import comfy.model_management as model_management
+try:
+    from server import PromptServer  # type: ignore
+    from aiohttp import web  # type: ignore
+except Exception:
+    PromptServer = None
+    web = None
 
 from .rag_core import (
     build_faiss_index,
@@ -99,7 +105,7 @@ def _get_prebuilt_source_roots() -> Dict[str, Path]:
     else:
         comfy_models_root = Path(__file__).resolve().parents[2] / "models"
 
-    original_corpus_root = comfy_models_root / "RAG" / "Original corpus"
+    original_corpus_root = comfy_models_root / "RAG" / "Original"
     return {
         PREBUILT_SOURCE_PLUGIN: plugin_rag_root,
         PREBUILT_SOURCE_ORIGINAL: original_corpus_root,
@@ -123,7 +129,7 @@ def _resolve_prebuilt_target(document: str) -> Path:
             root = source_roots[maybe_source]
             candidates = [root]
 
-    # Default resolution order: plugin rag first, then models/RAG/Original corpus.
+    # Default resolution order: plugin rag first, then models/RAG/Original.
     if not candidates:
         candidates = [source_roots[PREBUILT_SOURCE_PLUGIN], source_roots[PREBUILT_SOURCE_ORIGINAL]]
 
@@ -158,6 +164,25 @@ def _list_existing_indexes() -> List[str]:
             indexes.append(item.name)
     indexes = sorted(set(indexes))
     return indexes if indexes else ["default_index"]
+
+
+def _register_index_list_route() -> None:
+    if PromptServer is None or web is None:
+        return
+    instance = getattr(PromptServer, "instance", None)
+    if instance is None:
+        return
+    if getattr(instance, "_easyrag_index_route_registered", False):
+        return
+
+    @instance.routes.get("/easyrag/indexes")
+    async def easyrag_list_indexes(request):
+        return web.json_response({"items": _list_existing_indexes()})
+
+    instance._easyrag_index_route_registered = True
+
+
+_register_index_list_route()
 
 
 def _list_local_embedding_models() -> List[str]:
@@ -546,7 +571,7 @@ class PrebuiltLoaderNode:
             "required": {
                 "document": (
                     _list_prebuilt_docs_for_combo(),
-                    {"tooltip": t("Select a prebuilt document or folder from rag and models/RAG/Original corpus"), "label": t("document")}
+                    {"tooltip": t("Select a prebuilt document or folder from rag and models/RAG/Original"), "label": t("document")}
                 ),
             }
         }

@@ -72,7 +72,7 @@
   },
   "RagPromptPrebuiltLoader": {
     "display_name": "Rag Prebuilt Loader",
-    "description": "Select prebuilt datasets from local rag folder and ComfyUI/models/RAG/Original corpus.",
+    "description": "Select prebuilt datasets from local rag folder and ComfyUI/models/RAG/Original.",
     "inputs": {
       "document": { "name": "document" }
     },

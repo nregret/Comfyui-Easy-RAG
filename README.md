@@ -11,7 +11,7 @@
 - 支持中文向量库名（Windows 路径兼容修复）
 - 预制文档双来源加载：
   - 插件目录 `rag/`
-  - `ComfyUI/models/RAG/Original corpus/`
+  - `ComfyUI/models/RAG/Original/`
 - i18n 多语言支持（`locales/`）
 
 ## 节点列表
@@ -65,7 +65,7 @@ pip install -r requirements.txt
 - 在 `Rag 预制文档加载` 中直接选择文档或目录
 - 数据来源会自动从以下路径合并显示（不显示来源前缀）：
   - 插件 `rag/`
-  - `ComfyUI/models/RAG/Original corpus/`
+  - `ComfyUI/models/RAG/Original/`
 
 ## LM Studio 配置
 

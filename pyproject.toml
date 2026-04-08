@@ -3,9 +3,9 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "comfyui-easy-rag-lmstudio"
-version = "2.2.0"
-description = "ComfyUI local RAG nodes with FAISS, sentence-transformers, and LM Studio OpenAI-compatible API."
+name = "comfyui-rag-prompt"
+version = "1.0.0"
+description = "COMFYUI RAG PROMPT - 本地RAG专业提示词生成工具"
 readme = "README.md"
 requires-python = ">=3.10"
 dynamic = ["dependencies"]
@@ -20,10 +20,10 @@ classifiers = [
 dependencies = { file = ["requirements.txt"] }
 
 [project.urls]
-Repository = "https://github.com/nregret/Comfyui-Easy-RAG"
-Documentation = "https://github.com/nregret/Comfyui-Easy-RAG#readme"
-"Bug Tracker" = "https://github.com/nregret/Comfyui-Easy-RAG/issues"
+Repository = ""
+Documentation = ""
+"Bug Tracker" = ""
 
 [tool.comfy]
-PublisherId = "nnegret"
-DisplayName = "ComfyUI Easy RAG"
+PublisherId = "rag-prompt"
+DisplayName = "RAG PROMPT"

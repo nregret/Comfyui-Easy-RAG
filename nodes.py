@@ -268,8 +268,8 @@ class DocumentLoaderNode:
 class VectorStoreBuilderNode:
     @staticmethod
     def _build_mode_values() -> List[str]:
-        # Accept internal values and localized display values to avoid prompt validation failures
-        # when frontend displays translated labels.
+        # Keep all options for backend validation compatibility. 
+        # The UI will be filtered to only 2 items by our JS extension.
         return [
             "create_new",
             "use_existing",
@@ -424,7 +424,7 @@ class LMStudioRAGChatNode:
                     "label": t("system_prompt")
                 }),
                 "temperature": ("FLOAT", {"default": 0.2, "label": t("temperature")}),
-                "max_tokens": ("INT", {"default": 2048, "label": t("max_tokens")}),
+                "max_tokens": ("INT", {"default": 2048, "min": 0, "max": 8192, "step": 512, "label": t("max_tokens")}),
                 "seed": ("INT", {"default": 0, "min": 0, "max": 0xffffffffffffffff, "label": t("seed")}),
                 "top_k": ("INT", {"default": 5, "min": 1, "max": 100, "label": t("top_k")}),
                 "stream": ("BOOLEAN", {"default": True, "label": t("stream")}),
@@ -444,13 +444,18 @@ class LMStudioRAGChatNode:
     def chat_with_rag(self, question, base_url, model, system_prompt, temperature, max_tokens, seed, top_k, stream, unload_model_after_response, rag_index=None, image=None):
         # 【2】每个节点第一行：清显存
         _clear_vram_before_run(True)
-        
+
         base = base_url.strip()
         models = list_lmstudio_models(base)
         chosen = model.strip() or (models[0] if models else "")
 
+        print(f"🤖 [高级API] 选择模型: {chosen}")
+        print(f"🔗 [高级API] 连接地址: {base}")
+        print(f"📝 [高级API] 流式输出: {stream}")
+
         if _LAST_MODEL_BY_BASE_URL.get(base) and _LAST_MODEL_BY_BASE_URL[base] != chosen:
             try:
+                print(f"🔄 [高级API] 切换模型: {_LAST_MODEL_BY_BASE_URL[base]} -> {chosen}")
                 unload_lmstudio_model(base, _LAST_MODEL_BY_BASE_URL[base])
             except:
                 pass
@@ -459,8 +464,10 @@ class LMStudioRAGChatNode:
         if rag_index:
             ref = rag_index.get("index_dir") or rag_index.get("index_name")
             # 【3】加 device="cpu"
+            print(f"🔍 [高级API] 开始RAG检索 (top_k={top_k})")
             res = search_index(ref, question, top_k=top_k, device="cpu")
             ctx = res["context"]
+            print(f"✅ [高级API] RAG检索完成，检索到 {len(res['items'])} 个相关片段")
             # 【4】检索完强制卸载embedding模型
             try:
                 unload_embedding_model(rag_index["embedding_model"])
@@ -469,18 +476,22 @@ class LMStudioRAGChatNode:
                 pass
 
         img = _image_tensor_to_data_url(image)
+        print(f"🚀 [高级API] 开始生成回答...")
         resp = lmstudio_chat(
             base_url=base, model=chosen,
             question=question, context=ctx, image_data_url=img,
             system_prompt=system_prompt, temperature=temperature, max_tokens=max_tokens,
-            seed=seed, stream=stream
+            seed=seed, stream=stream, emit_stream_log=True
         )
+        print(f"✅ [高级API] 生成完成，回答长度: {len(resp['answer'])} 字符")
 
         _LAST_MODEL_BY_BASE_URL[base] = chosen
         if unload_model_after_response and chosen:
             try:
+                print(f"♻️ [高级API] 卸载模型: {chosen}")
                 unload_lmstudio_model(base, chosen)
                 _LAST_MODEL_BY_BASE_URL.pop(base, None)
+                print(f"✅ [高级API] 模型卸载完成")
             except:
                 pass
 
@@ -553,7 +564,7 @@ class LMStudioRAGChatSimpleNode:
         resp = lmstudio_chat(
             base_url=base, model=chosen,
             question=question, context=ctx, image_data_url=_image_tensor_to_data_url(image),
-            system_prompt=system_prompt, seed=seed, stream=True
+            system_prompt=system_prompt, temperature=0.2, max_tokens=4096, seed=seed, stream=False, api_mode="chat_completions"
         )
 
         _LAST_MODEL_BY_BASE_URL[base] = chosen
@@ -571,7 +582,7 @@ class LMStudioRAGChatSimpleNode:
             torch.cuda.empty_cache()
             torch.cuda.ipc_collect()
 
-        return extract_answer_between_newlines(resp["answer"])
+        return (extract_answer_between_newlines(resp["answer"]),)
 
 
 # ==============================================

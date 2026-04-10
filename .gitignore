@@ -2,3 +2,4 @@ __pycache__/
 *.pyc
 data/faiss_indexes/
 .tmp/
+node.zip

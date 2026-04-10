@@ -98,54 +98,24 @@ function preferChineseLocale() {
 }
 
 function localizeModeOptions(node, modeWidget) {
-  if (!modeWidget) return;
-  const values = getComboValues(modeWidget).map((x) => String(x));
-  if (!values.length) return;
-
-  const toDisplay = (internal) => {
-    const zh = preferChineseLocale();
-    if (internal === MODE_USE_EXISTING) return zh ? "使用已有向量库" : "Use Existing";
-    return zh ? "新建向量库" : "Create New";
-  };
-
-  const currentNormalized = normalizeMode(modeWidget.value);
-  const mapped = [];
-  for (const v of values) {
-    const display = toDisplay(normalizeMode(v));
-    if (!mapped.includes(display)) mapped.push(display);
-  }
-  if (mapped.length === 0) return;
-  setComboValues(modeWidget, mapped);
-  modeWidget.value = toDisplay(currentNormalized);
+  // We no longer manually rewrite options here. 
+  // Native nodeDefs.json is sufficient and more stable for modern ComfyUI.
+  return;
 }
 
 function coerceModeWidget(node) {
   const modeWidget = getWidgetByNames(node, BUILD_MODE_NAMES);
   if (!modeWidget) return;
-  localizeModeOptions(node, modeWidget);
-
-  const values = getComboValues(modeWidget).map((x) => String(x));
-  const pickDisplayByInternal = (internalMode) => {
-    if (!values.length) return internalMode;
-    const wantExisting = internalMode === MODE_USE_EXISTING;
-    const matched = values.find((v) => {
-      const s = v.toLowerCase();
-      if (wantExisting) {
-        return s.includes("use") || s.includes("已有");
-      }
-      return s.includes("create") || s.includes("新建");
-    });
-    return matched || values[0];
-  };
-
-  const normalized = normalizeMode(modeWidget.value);
-  const current = String(modeWidget.value ?? "");
-  const inOptions = values.includes(current);
-  if (!inOptions || current === MODE_CREATE_NEW || current === MODE_USE_EXISTING) {
-    modeWidget.value = pickDisplayByInternal(normalized);
+  
+  const zh = preferChineseLocale();
+  const val = String(modeWidget.value || "").toLowerCase();
+  
+  // Backward compatibility: map any incoming value to the 2 current options
+  if (val.includes("use") || val.includes("已有")) {
+    modeWidget.value = zh ? "使用已有向量库" : "Use Existing";
+  } else if (val.includes("create") || val.includes("新建")) {
+    modeWidget.value = zh ? "新建向量库" : "Create New";
   }
-
-  ensureWidgetValueInOptions(modeWidget);
 }
 
 function applyModeUI(node) {
@@ -167,6 +137,19 @@ app.registerExtension({
   name: "rag.index-mode-ui",
   beforeRegisterNodeDef(nodeType, nodeData) {
     if (nodeData.name !== TARGET_NODE) return;
+
+    // Fix: Prune the list of options at registration level to prevent UI clutter (6 options bug).
+    // This happens once per node type and ensures the widget's 'source of truth' is clean.
+    const buildModeInput = nodeData.input?.required?.build_mode;
+    if (buildModeInput && Array.isArray(buildModeInput[0])) {
+      const zh = preferChineseLocale();
+      // Replace the global options list for this node type
+      if (zh) {
+        buildModeInput[0] = ["新建向量库", "使用已有向量库"];
+      } else {
+        buildModeInput[0] = ["Create New", "Use Existing"];
+      }
+    }
 
     const origOnNodeCreated = nodeType.prototype.onNodeCreated;
     const origOnConfigure = nodeType.prototype.onConfigure;

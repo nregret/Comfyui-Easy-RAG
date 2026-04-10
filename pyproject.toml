@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "comfyui-easy-rag-lmstudio"
-version = "2.4.0"
+version = "2.4.2"
 description = "本插件为 ComfyUI 提供本地 RAG 工作流节点，支持文档构建向量库、检索增强问答，以及 LM Studio 本地多模态对话。"
 readme = "README.md"
 requires-python = ">=3.10"

@@ -32,8 +32,6 @@ def patch_pooling():
     except Exception:
         pass
 
-patch_pooling()
-
 # ============================
 # 纯 TXT 优化版，无多余 JSON 干扰
 # ============================
@@ -51,38 +49,98 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, ClassVar, Dict, List, Optional, Tuple
 
-import numpy as np
-import requests
-try:
-    import faiss  # type: ignore
-except Exception:
-    faiss = None
-
-try:
-    from sentence_transformers import SentenceTransformer  # type: ignore
-except Exception:
-    SentenceTransformer = None
-
-try:
-    from transformers.utils import logging as hf_logging  # type: ignore
-except Exception:
-    hf_logging = None
-
-# 提前导入 torch 和 model_management，保证清理可用
-try:
-    import torch
-except Exception:
-    torch = None
-
-try:
-    import comfy.model_management as model_management
-except Exception:
-    model_management = None
-
 from .i18n import t
 
 
 SUPPORTED_EXTENSIONS = {".txt", ".md", ".json", ".pdf"}
+_FAISS_MODULE = None
+_FAISS_IMPORT_ATTEMPTED = False
+_SENTENCE_TRANSFORMER_CLASS = None
+_SENTENCE_TRANSFORMER_IMPORT_ATTEMPTED = False
+_HF_LOGGING_MODULE = None
+_HF_LOGGING_IMPORT_ATTEMPTED = False
+_TORCH_MODULE = None
+_TORCH_IMPORT_ATTEMPTED = False
+_MODEL_MANAGEMENT_MODULE = None
+_MODEL_MANAGEMENT_IMPORT_ATTEMPTED = False
+_NUMPY_MODULE = None
+_REQUESTS_MODULE = None
+
+
+def _get_numpy():
+    global _NUMPY_MODULE
+    if _NUMPY_MODULE is None:
+        import numpy as np  # type: ignore
+        _NUMPY_MODULE = np
+    return _NUMPY_MODULE
+
+
+def _get_requests():
+    global _REQUESTS_MODULE
+    if _REQUESTS_MODULE is None:
+        import requests  # type: ignore
+        _REQUESTS_MODULE = requests
+    return _REQUESTS_MODULE
+
+
+def _get_faiss():
+    global _FAISS_MODULE, _FAISS_IMPORT_ATTEMPTED
+    if not _FAISS_IMPORT_ATTEMPTED:
+        _FAISS_IMPORT_ATTEMPTED = True
+        try:
+            import faiss  # type: ignore
+            _FAISS_MODULE = faiss
+        except Exception:
+            _FAISS_MODULE = None
+    return _FAISS_MODULE
+
+
+def _get_sentence_transformer_class():
+    global _SENTENCE_TRANSFORMER_CLASS, _SENTENCE_TRANSFORMER_IMPORT_ATTEMPTED
+    if not _SENTENCE_TRANSFORMER_IMPORT_ATTEMPTED:
+        _SENTENCE_TRANSFORMER_IMPORT_ATTEMPTED = True
+        try:
+            from sentence_transformers import SentenceTransformer  # type: ignore
+            _SENTENCE_TRANSFORMER_CLASS = SentenceTransformer
+        except Exception:
+            _SENTENCE_TRANSFORMER_CLASS = None
+    return _SENTENCE_TRANSFORMER_CLASS
+
+
+def _get_hf_logging():
+    global _HF_LOGGING_MODULE, _HF_LOGGING_IMPORT_ATTEMPTED
+    if not _HF_LOGGING_IMPORT_ATTEMPTED:
+        _HF_LOGGING_IMPORT_ATTEMPTED = True
+        try:
+            from transformers.utils import logging as hf_logging  # type: ignore
+            _HF_LOGGING_MODULE = hf_logging
+        except Exception:
+            _HF_LOGGING_MODULE = None
+    return _HF_LOGGING_MODULE
+
+
+def _get_torch():
+    global _TORCH_MODULE, _TORCH_IMPORT_ATTEMPTED
+    if not _TORCH_IMPORT_ATTEMPTED:
+        _TORCH_IMPORT_ATTEMPTED = True
+        try:
+            import torch  # type: ignore
+            _TORCH_MODULE = torch
+        except Exception:
+            _TORCH_MODULE = None
+    return _TORCH_MODULE
+
+
+def _get_model_management():
+    global _MODEL_MANAGEMENT_MODULE, _MODEL_MANAGEMENT_IMPORT_ATTEMPTED
+    if not _MODEL_MANAGEMENT_IMPORT_ATTEMPTED:
+        _MODEL_MANAGEMENT_IMPORT_ATTEMPTED = True
+        try:
+            import comfy.model_management as model_management  # type: ignore
+            _MODEL_MANAGEMENT_MODULE = model_management
+        except Exception:
+            _MODEL_MANAGEMENT_MODULE = None
+    return _MODEL_MANAGEMENT_MODULE
 
 
 def _faiss_temp_file() -> Path:
@@ -91,6 +149,9 @@ def _faiss_temp_file() -> Path:
 
 def _faiss_write_index_safe(index: Any, target_path: Path) -> None:
     """Write FAISS index through an ASCII temp path for Windows Unicode-path compatibility."""
+    faiss = _get_faiss()
+    if faiss is None:
+        raise ImportError("faiss 未安装")
     tmp = _faiss_temp_file()
     try:
         faiss.write_index(index, str(tmp))
@@ -106,6 +167,9 @@ def _faiss_write_index_safe(index: Any, target_path: Path) -> None:
 
 def _faiss_read_index_safe(source_path: Path) -> Any:
     """Read FAISS index through an ASCII temp path for Windows Unicode-path compatibility."""
+    faiss = _get_faiss()
+    if faiss is None:
+        raise ImportError("faiss not installed")
     tmp = _faiss_temp_file()
     try:
         tmp.write_bytes(source_path.read_bytes())
@@ -228,14 +292,16 @@ def split_text(text: str, chunk_size: int = 1500, chunk_overlap: int = 0) -> Lis
 class EmbeddingBackend:
     model_name: str
     device: Optional[str] = None
-    _model: Optional[SentenceTransformer] = None
+    _model: Optional[Any] = None
     _MODEL_CACHE: ClassVar[Optional[Dict[str, Any]]] = None
     _MODEL_CACHE_LOCK: ClassVar[threading.Lock] = threading.Lock()
 
     @property
-    def model(self) -> SentenceTransformer:
+    def model(self) -> Any:
+        SentenceTransformer = _get_sentence_transformer_class()
         if SentenceTransformer is None:
             raise ImportError("sentence-transformers 未安装")
+        patch_pooling()
         if EmbeddingBackend._MODEL_CACHE is None:
             EmbeddingBackend._MODEL_CACHE = {}
         if self._model is None:
@@ -253,6 +319,7 @@ class EmbeddingBackend:
                     old_tf_level = tf_logger.level
                     old_tfmu_level = tfmu_logger.level
                     old_hf_verbosity = None
+                    hf_logging = _get_hf_logging()
                     try:
                         st_logger.setLevel(logging.ERROR)
                         tf_logger.setLevel(logging.ERROR)
@@ -284,7 +351,8 @@ class EmbeddingBackend:
         return self._model
 
     # --------------- 这里只改了这里！！！---------------
-    def encode(self, texts: List[str]) -> np.ndarray:
+    def encode(self, texts: List[str]) -> Any:
+        np = _get_numpy()
         if not texts:
             return np.zeros((0, 1), dtype=np.float32)
         vectors = self.model.encode(
@@ -356,6 +424,7 @@ def unload_embedding_model(model_name: Optional[str] = None) -> Dict:
     gc.collect()  # 双次回收，彻底清干净
 
     # 3. 强制清空CUDA缓存
+    torch = _get_torch()
     if torch is not None and torch.cuda.is_available():
         torch.cuda.empty_cache()
         if hasattr(torch.cuda, "ipc_collect"):
@@ -363,6 +432,7 @@ def unload_embedding_model(model_name: Optional[str] = None) -> Dict:
         torch.cuda.synchronize()  # 强制同步，确保显存释放
 
     # 4. 强制ComfyUI模型管理清理
+    model_management = _get_model_management()
     if model_management is not None:
         try:
             if hasattr(model_management, "cleanup_models"):
@@ -453,6 +523,7 @@ def build_faiss_index(
     chunk_overlap: int,
     index_name: str,
 ) -> Dict:
+    faiss = _get_faiss()
     if faiss is None:
         raise ImportError("faiss 未安装")
     if not documents:
@@ -518,6 +589,7 @@ def build_faiss_index(
 
 
 def load_index(index_name_or_path: str) -> Tuple[Any, List[Dict], Dict]:
+    faiss = _get_faiss()
     if faiss is None:
         raise ImportError("faiss not installed")
     path = Path(index_name_or_path)
@@ -589,6 +661,7 @@ def resolve_lmstudio_model(base_url: str, timeout: int = 20) -> str:
 
 
 def list_lmstudio_models(base_url: str, timeout: int = 10) -> List[str]:
+    requests = _get_requests()
     base = base_url.rstrip("/")
     out = []
     try:
@@ -617,6 +690,7 @@ def list_lmstudio_models(base_url: str, timeout: int = 10) -> List[str]:
 
 
 def unload_lmstudio_model(base_url: str, instance_id: str, timeout: int = 20) -> Dict:
+    requests = _get_requests()
     ep = base_url.rstrip("/") + "/api/v1/models/unload"
     r = requests.post(ep, json={"instance_id": instance_id}, timeout=timeout)
     r.raise_for_status()
@@ -685,6 +759,7 @@ def _extract_answer_from_responses_payload(data: Dict) -> Dict:
 
 
 def _stream_chat_completions(ep, payload, timeout, emit, headers=None):
+    requests = _get_requests()
     c_parts = []
     r_parts = []
     s_parts = []
@@ -735,6 +810,7 @@ def _stream_chat_completions(ep, payload, timeout, emit, headers=None):
 
 
 def _stream_responses(ep, payload, timeout, emit):
+    requests = _get_requests()
     ev = ""
     c = []
     r = []
@@ -847,6 +923,7 @@ def lmstudio_chat(
             else:
                 res = _stream_chat_completions(ep, payload, timeout, emit_stream_log)
             return {"answer": res["answer"], "raw": res["raw"], "model": model, "stream_text": res["stream_text"]}
+        requests = _get_requests()
         resp = requests.post(ep, json=payload, timeout=timeout)
     except Exception as e:
         if mode == "responses":
@@ -861,6 +938,7 @@ def lmstudio_chat(
 
     # 对话后强制清理显存
     gc.collect()
+    torch = _get_torch()
     if torch is not None and torch.cuda.is_available():
         torch.cuda.empty_cache()
 
@@ -933,6 +1011,7 @@ def external_api_chat(
             res = _stream_chat_completions(ep, payload, timeout, emit_stream_log, headers=headers)
             return {"answer": res["answer"], "raw": res["raw"], "model": model, "stream_text": res["stream_text"]}
         
+        requests = _get_requests()
         resp = requests.post(ep, json=payload, headers=headers, timeout=timeout)
         if not resp.ok:
             error_detail = ""
@@ -947,6 +1026,7 @@ def external_api_chat(
         
         # 清理
         gc.collect()
+        torch = _get_torch()
         if torch is not None and torch.cuda.is_available():
             torch.cuda.empty_cache()
             

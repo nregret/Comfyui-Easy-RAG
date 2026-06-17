@@ -7,10 +7,6 @@ from pathlib import Path
 from typing import Dict, List
 
 import folder_paths
-import numpy as np
-from PIL import Image
-import torch
-import comfy.model_management as model_management
 
 from .rag_core import (
     build_faiss_index,
@@ -32,22 +28,93 @@ SUPPORTED_EXTENSIONS = {".txt", ".md", ".json", ".pdf"}
 PREBUILT_SOURCE_PLUGIN = "plugin"
 PREBUILT_SOURCE_ORIGINAL = "original"
 
+_TORCH_MODULE = None
+_TORCH_IMPORT_ATTEMPTED = False
+_MODEL_MANAGEMENT_MODULE = None
+_MODEL_MANAGEMENT_IMPORT_ATTEMPTED = False
+_NUMPY_MODULE = None
+_PIL_IMAGE_CLASS = None
+
+
+def _get_torch():
+    global _TORCH_MODULE, _TORCH_IMPORT_ATTEMPTED
+    if not _TORCH_IMPORT_ATTEMPTED:
+        _TORCH_IMPORT_ATTEMPTED = True
+        try:
+            import torch  # type: ignore
+            _TORCH_MODULE = torch
+        except Exception:
+            _TORCH_MODULE = None
+    return _TORCH_MODULE
+
+
+def _get_model_management():
+    global _MODEL_MANAGEMENT_MODULE, _MODEL_MANAGEMENT_IMPORT_ATTEMPTED
+    if not _MODEL_MANAGEMENT_IMPORT_ATTEMPTED:
+        _MODEL_MANAGEMENT_IMPORT_ATTEMPTED = True
+        try:
+            import comfy.model_management as model_management  # type: ignore
+            _MODEL_MANAGEMENT_MODULE = model_management
+        except Exception:
+            _MODEL_MANAGEMENT_MODULE = None
+    return _MODEL_MANAGEMENT_MODULE
+
+
+def _get_numpy():
+    global _NUMPY_MODULE
+    if _NUMPY_MODULE is None:
+        import numpy as np  # type: ignore
+        _NUMPY_MODULE = np
+    return _NUMPY_MODULE
+
+
+def _get_pil_image_class():
+    global _PIL_IMAGE_CLASS
+    if _PIL_IMAGE_CLASS is None:
+        from PIL import Image  # type: ignore
+        _PIL_IMAGE_CLASS = Image
+    return _PIL_IMAGE_CLASS
+
+
+def _soft_empty_cache(ipc_collect: bool = False):
+    model_management = _get_model_management()
+    if model_management is not None:
+        try:
+            if hasattr(model_management, "soft_empty_cache"):
+                model_management.soft_empty_cache()
+        except Exception:
+            pass
+
+    torch = _get_torch()
+    if torch is None:
+        return
+    try:
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+            if ipc_collect and hasattr(torch.cuda, "ipc_collect"):
+                torch.cuda.ipc_collect()
+    except Exception:
+        pass
+
+
 # ====================== 【1】加在最上方：原作者核心显存清理函数 ======================
 def _clear_vram_before_run(enabled: bool):
     if not enabled:
         return
     gc.collect()
+    model_management = _get_model_management()
     try:
-        if hasattr(model_management, "unload_all_models"):
+        if model_management is not None and hasattr(model_management, "unload_all_models"):
             model_management.unload_all_models()
-        if hasattr(model_management, "cleanup_models"):
+        if model_management is not None and hasattr(model_management, "cleanup_models"):
             model_management.cleanup_models(True)
-        if hasattr(model_management, "soft_empty_cache"):
+        if model_management is not None and hasattr(model_management, "soft_empty_cache"):
             model_management.soft_empty_cache()
     except:
         pass
+    torch = _get_torch()
     try:
-        if torch.cuda.is_available():
+        if torch is not None and torch.cuda.is_available():
             torch.cuda.empty_cache()
     except:
         pass
@@ -221,13 +288,15 @@ def _list_local_embedding_models() -> List[str]:
 
 
 def _list_lmstudio_models_for_ui() -> List[str]:
-    models = list_lmstudio_models("http://127.0.0.1:1234", timeout=2)
+    models = list_lmstudio_models("http://127.0.0.1:1234", timeout=0.25)
     return models if models else [""]
 
 
 def _image_tensor_to_data_url(image) -> str:
     if image is None:
         return ""
+    np = _get_numpy()
+    Image = _get_pil_image_class()
     arr = image
     if hasattr(arr, "detach"):
         arr = arr.detach().cpu().numpy()
@@ -295,10 +364,7 @@ class DocumentLoaderNode:
         
         # 末尾清理（保留）
         gc.collect()
-        model_management.soft_empty_cache()
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-            torch.cuda.ipc_collect()
+        _soft_empty_cache(ipc_collect=True)
             
         return (documents, summary)
 
@@ -440,10 +506,7 @@ class VectorStoreBuilderNode:
 
         # 【5】保留原有末尾显存清理
         gc.collect()
-        model_management.soft_empty_cache()
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-            torch.cuda.ipc_collect()
+        _soft_empty_cache(ipc_collect=True)
 
         return (info, summary)
 
@@ -553,10 +616,7 @@ class LMStudioRAGChatNode:
 
         # 【5】保留原有末尾显存清理
         gc.collect()
-        model_management.soft_empty_cache()
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-            torch.cuda.ipc_collect()
+        _soft_empty_cache(ipc_collect=True)
 
         ans = extract_answer_between_newlines(resp["answer"])
         return (ans, ctx, json.dumps(resp, ensure_ascii=False))
@@ -648,10 +708,7 @@ class LMStudioRAGChatSimpleNode:
 
         # 【5】保留原有末尾显存清理
         gc.collect()
-        model_management.soft_empty_cache()
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-            torch.cuda.ipc_collect()
+        _soft_empty_cache(ipc_collect=True)
 
         return (extract_answer_between_newlines(resp["answer"]),)
 
@@ -747,9 +804,7 @@ class ExternalRAGChatNode:
         print(f"✅ [外部API] 生成完成")
 
         gc.collect()
-        model_management.soft_empty_cache()
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
+        _soft_empty_cache()
 
         ans = extract_answer_between_newlines(resp["answer"])
         return (ans, ctx, json.dumps(resp, ensure_ascii=False))
@@ -808,9 +863,7 @@ class PrebuiltLoaderNode:
             summary += t(" (failed: {count})", count=len(errors))
             
         gc.collect()
-        model_management.soft_empty_cache()
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
+        _soft_empty_cache()
             
         return (documents, summary)
 

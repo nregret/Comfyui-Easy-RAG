@@ -4,7 +4,7 @@ import json
 import os
 from io import BytesIO
 from pathlib import Path
-from typing import Dict, List
+from typing import Any, Dict, List, Tuple
 
 import folder_paths
 
@@ -292,9 +292,55 @@ def _list_lmstudio_models_for_ui() -> List[str]:
     return models if models else [""]
 
 
-def _image_tensor_to_data_url(image) -> str:
+def _dynamic_image_index(name: str) -> int:
+    if name == "image":
+        return 1
+    if name.startswith("image_"):
+        tail = name[len("image_"):]
+        if tail.isdigit():
+            return int(tail)
+    return 10**9
+
+
+def _is_dynamic_image_input(name: str) -> bool:
+    return name.startswith("image_") and name[len("image_"):].isdigit()
+
+
+def _sorted_dynamic_image_values(kwargs: Dict[str, Any]) -> List[Any]:
+    items: List[Tuple[int, str, Any]] = []
+    for key, value in kwargs.items():
+        if _is_dynamic_image_input(key):
+            items.append((_dynamic_image_index(key), key, value))
+    items.sort(key=lambda item: (item[0], item[1]))
+    return [value for _, _, value in items]
+
+
+class DynamicApiOptionalInputs(dict):
+    def __contains__(self, key):
+        return dict.__contains__(self, key) or _is_dynamic_image_input(str(key))
+
+    def __getitem__(self, key):
+        if dict.__contains__(self, key):
+            return dict.__getitem__(self, key)
+        if _is_dynamic_image_input(str(key)):
+            return ("IMAGE", {"label": t("image")})
+        raise KeyError(key)
+
+    def get(self, key, default=None):
+        if key in self:
+            return self[key]
+        return default
+
+
+def _image_tensor_to_data_urls(image) -> List[str]:
     if image is None:
-        return ""
+        return []
+    if isinstance(image, (list, tuple)):
+        urls: List[str] = []
+        for item in image:
+            urls.extend(_image_tensor_to_data_urls(item))
+        return urls
+
     np = _get_numpy()
     Image = _get_pil_image_class()
     arr = image
@@ -302,15 +348,37 @@ def _image_tensor_to_data_url(image) -> str:
         arr = arr.detach().cpu().numpy()
     if not isinstance(arr, np.ndarray):
         arr = np.array(arr)
-    if arr.ndim == 4:
-        arr = arr[0]
-    arr = np.clip(arr, 0.0, 1.0)
-    arr = (arr * 255.0).astype(np.uint8)
-    img = Image.fromarray(arr)
-    buf = BytesIO()
-    img.save(buf, format="PNG")
-    b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
-    return f"data:image/png;base64,{b64}"
+
+    frames = [arr[i] for i in range(arr.shape[0])] if arr.ndim == 4 else [arr]
+    urls: List[str] = []
+    for frame in frames:
+        frame = np.clip(frame, 0.0, 1.0)
+        if frame.ndim == 2:
+            frame = np.stack([frame, frame, frame], axis=-1)
+        if frame.ndim == 3 and frame.shape[-1] == 1:
+            frame = np.repeat(frame, 3, axis=-1)
+        if frame.ndim == 3 and frame.shape[-1] > 3:
+            frame = frame[..., :3]
+        frame = (frame * 255.0).astype(np.uint8)
+        img = Image.fromarray(frame)
+        buf = BytesIO()
+        img.save(buf, format="PNG")
+        b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
+        urls.append(f"data:image/png;base64,{b64}")
+
+    return urls
+
+
+def _image_tensor_to_data_url(image) -> str:
+    urls = _image_tensor_to_data_urls(image)
+    return urls[0] if urls else ""
+
+
+def _collect_image_data_urls(image=None, **kwargs) -> List[str]:
+    urls = _image_tensor_to_data_urls(image)
+    for value in _sorted_dynamic_image_values(kwargs):
+        urls.extend(_image_tensor_to_data_urls(value))
+    return urls
 
 
 _LAST_MODEL_BY_BASE_URL: Dict[str, str] = {}
@@ -538,10 +606,10 @@ class LMStudioRAGChatNode:
                 "stream": ("BOOLEAN", {"default": True, "label": t("stream")}),
                 "unload_model_after_response": ("BOOLEAN", {"default": True, "label": t("unload_model_after_response")}),
             },
-            "optional": {
+            "optional": DynamicApiOptionalInputs({
                 "rag_index": ("RAG_INDEX", {"label": t("rag_index")}),
                 "image": ("IMAGE", {"label": t("image")})
-            },
+            }),
         }
 
     RETURN_TYPES = ("STRING", "STRING", "STRING")
@@ -549,7 +617,7 @@ class LMStudioRAGChatNode:
     FUNCTION = "chat_with_rag"
     CATEGORY = "RagPrompt"
 
-    def chat_with_rag(self, question, base_url, model, system_prompt, system_prompt_source, temperature, max_tokens, seed, top_k, stream, unload_model_after_response, rag_index=None, image=None):
+    def chat_with_rag(self, question, base_url, model, system_prompt, system_prompt_source, temperature, max_tokens, seed, top_k, stream, unload_model_after_response, rag_index=None, image=None, **kwargs):
         # 【2】每个节点第一行：清显存
         _clear_vram_before_run(True)
 
@@ -594,11 +662,11 @@ class LMStudioRAGChatNode:
             except:
                 pass
 
-        img = _image_tensor_to_data_url(image)
+        image_urls = _collect_image_data_urls(image, **kwargs)
         print(f"🚀 [高级API] 开始生成回答...")
         resp = lmstudio_chat(
             base_url=base, model=chosen,
-            question=question, context=ctx, image_data_url=img,
+            question=question, context=ctx, image_data_urls=image_urls,
             system_prompt=system_prompt, temperature=temperature, max_tokens=max_tokens,
             seed=seed, stream=stream, emit_stream_log=True
         )
@@ -645,10 +713,10 @@ class LMStudioRAGChatSimpleNode:
                 "seed": ("INT", {"default": 0, "min": 0, "max": 0xffffffffffffffff, "label": t("seed")}),
                 "unload_model_after_response": ("BOOLEAN", {"default": True, "label": t("unload_model_after_response")}),
             },
-            "optional": {
+            "optional": DynamicApiOptionalInputs({
                 "rag_index": ("RAG_INDEX", {"label": t("rag_index")}),
                 "image": ("IMAGE", {"label": t("image")})
-            },
+            }),
         }
 
     RETURN_TYPES = ("STRING",)
@@ -656,7 +724,7 @@ class LMStudioRAGChatSimpleNode:
     FUNCTION = "chat_simple"
     CATEGORY = "RagPrompt"
 
-    def chat_simple(self, question, base_url, model, system_prompt, system_prompt_source, seed, unload_model_after_response, rag_index=None, image=None):
+    def chat_simple(self, question, base_url, model, system_prompt, system_prompt_source, seed, unload_model_after_response, rag_index=None, image=None, **kwargs):
         # 【2】每个节点第一行：清显存
         _clear_vram_before_run(True)
         
@@ -694,7 +762,7 @@ class LMStudioRAGChatSimpleNode:
 
         resp = lmstudio_chat(
             base_url=base, model=chosen,
-            question=question, context=ctx, image_data_url=_image_tensor_to_data_url(image),
+            question=question, context=ctx, image_data_urls=_collect_image_data_urls(image, **kwargs),
             system_prompt=system_prompt, temperature=0.2, max_tokens=4096, seed=seed, stream=False, api_mode="chat_completions"
         )
 
@@ -740,10 +808,10 @@ class ExternalRAGChatNode:
                 "top_k": ("INT", {"default": 5, "min": 1, "max": 100, "label": t("top_k")}),
                 "stream": ("BOOLEAN", {"default": True, "label": t("stream")}),
             },
-            "optional": {
+            "optional": DynamicApiOptionalInputs({
                 "rag_index": ("RAG_INDEX", {"label": t("rag_index")}),
                 "image": ("IMAGE", {"label": t("image")})
-            },
+            }),
         }
 
     RETURN_TYPES = ("STRING", "STRING", "STRING")
@@ -751,7 +819,7 @@ class ExternalRAGChatNode:
     FUNCTION = "chat_with_external_rag"
     CATEGORY = "RagPrompt"
 
-    def chat_with_external_rag(self, question, base_url, api_key, model, system_prompt, system_prompt_source, temperature, max_tokens, seed, top_k, stream, rag_index=None, image=None):
+    def chat_with_external_rag(self, question, base_url, api_key, model, system_prompt, system_prompt_source, temperature, max_tokens, seed, top_k, stream, rag_index=None, image=None, **kwargs):
         _clear_vram_before_run(True)
 
         # 判断使用哪个系统提示词
@@ -783,7 +851,7 @@ class ExternalRAGChatNode:
             except:
                 pass
 
-        img = _image_tensor_to_data_url(image)
+        image_urls = _collect_image_data_urls(image, **kwargs)
         print(f"🚀 [外部API] 开始调用云端生成...")
         
         resp = external_api_chat(
@@ -792,7 +860,7 @@ class ExternalRAGChatNode:
             model=chosen,
             question=question,
             context=ctx,
-            image_data_url=img,
+            image_data_urls=image_urls,
             system_prompt=system_prompt,
             temperature=temperature,
             max_tokens=max_tokens,

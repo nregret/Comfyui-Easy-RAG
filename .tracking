@@ -5,6 +5,7 @@ nodes.py
 rag_core.py
 requirements.txt
 web/i18n.js
+web/rag_dynamic_images.js
 web/rag_index_mode_ui.js
 web/rag_upload.js
 locales/en/main.json

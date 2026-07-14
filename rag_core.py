@@ -864,6 +864,16 @@ def _stream_responses(ep, payload, timeout, emit):
     }
 
 
+def _normalize_image_data_urls(image_data_url: str = "", image_data_urls: Optional[List[str]] = None) -> List[str]:
+    urls: List[str] = []
+    if image_data_url and image_data_url.strip():
+        urls.append(image_data_url.strip())
+    for url in image_data_urls or []:
+        if url and str(url).strip():
+            urls.append(str(url).strip())
+    return urls
+
+
 def lmstudio_chat(
     base_url: str,
     model: str,
@@ -878,12 +888,14 @@ def lmstudio_chat(
     stream: bool = False,
     emit_stream_log: bool = False,
     timeout: int = 120,
+    image_data_urls: Optional[List[str]] = None,
 ) -> Dict:
     if not model.strip():
         model = resolve_lmstudio_model(base_url)
     q = question.strip()
     if context.strip():
         q = t("请根据上下文回答：\n{context}\n\n问题：{question}", context=context.strip(), question=question.strip())
+    image_urls = _normalize_image_data_urls(image_data_url, image_data_urls)
     mode = api_mode.strip().lower()
     base = base_url.rstrip("/")
     if mode == "responses":
@@ -892,8 +904,8 @@ def lmstudio_chat(
             {"role": "system", "content": [{"type": "input_text", "text": system_prompt}]},
             {"role": "user", "content": [{"type": "input_text", "text": q}]}
         ]
-        if image_data_url.strip():
-            inp[1]["content"].append({"type": "input_image", "image_url": image_data_url.strip()})
+        for url in image_urls:
+            inp[1]["content"].append({"type": "input_image", "image_url": url})
         payload = {"model": model, "input": inp, "stream": stream}
         if temperature is not None:
             payload["temperature"] = float(temperature)
@@ -904,11 +916,12 @@ def lmstudio_chat(
     else:
         ep = base + "/v1/chat/completions"
         msg = [{"role": "system", "content": system_prompt}, {"role": "user", "content": q}]
-        if image_data_url.strip():
-            msg[1]["content"] = [
-                {"type": "text", "text": q},
-                {"type": "image_url", "image_url": {"url": image_data_url.strip()}}
-            ]
+        if image_urls:
+            msg[1]["content"] = [{"type": "text", "text": q}]
+            msg[1]["content"].extend(
+                {"type": "image_url", "image_url": {"url": url}}
+                for url in image_urls
+            )
         payload = {"model": model, "messages": msg, "stream": stream}
         if temperature is not None:
             payload["temperature"] = float(temperature)
@@ -927,7 +940,22 @@ def lmstudio_chat(
         resp = requests.post(ep, json=payload, timeout=timeout)
     except Exception as e:
         if mode == "responses":
-            return lmstudio_chat(base_url, model, question, context, image_data_url, system_prompt, temperature, max_tokens, "chat_completions", stream, emit_stream_log, timeout)
+            return lmstudio_chat(
+                base_url=base_url,
+                model=model,
+                question=question,
+                context=context,
+                image_data_url="",
+                system_prompt=system_prompt,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                seed=seed,
+                api_mode="chat_completions",
+                stream=stream,
+                emit_stream_log=emit_stream_log,
+                timeout=timeout,
+                image_data_urls=image_urls,
+            )
         raise RuntimeError(f"API 连接失败：{e}")
     resp.raise_for_status()
     data = resp.json()
@@ -959,10 +987,12 @@ def external_api_chat(
     stream: bool = False,
     emit_stream_log: bool = False,
     timeout: int = 120,
+    image_data_urls: Optional[List[str]] = None,
 ) -> Dict:
     q = question.strip()
     if context.strip():
         q = t("请根据上下文回答：\n{context}\n\n问题：{question}", context=context.strip(), question=question.strip())
+    image_urls = _normalize_image_data_urls(image_data_url, image_data_urls)
 
     base = base_url.rstrip("/")
     # 强制使用标准的 chat/completions 路径
@@ -987,11 +1017,12 @@ def external_api_chat(
         headers["Authorization"] = f"Bearer {api_key.strip()}"
 
     msg = [{"role": "system", "content": system_prompt}, {"role": "user", "content": q}]
-    if image_data_url.strip():
-        msg[1]["content"] = [
-            {"type": "text", "text": q},
-            {"type": "image_url", "image_url": {"url": image_data_url.strip()}}
-        ]
+    if image_urls:
+        msg[1]["content"] = [{"type": "text", "text": q}]
+        msg[1]["content"].extend(
+            {"type": "image_url", "image_url": {"url": url}}
+            for url in image_urls
+        )
     
     payload = {
         "model": model,

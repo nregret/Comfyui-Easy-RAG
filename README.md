@@ -20,6 +20,7 @@
 *   **🤖 双驱动大模型接入**：
     *   **本地私有部署 (LM Studio)**：无缝对接本地多模态大模型，支持完全离线运行与视觉能力。
     *   **云端强大算力 (External API)**：原生支持 OpenAI 兼容格式的外部 API（如 DeepSeek, GPT-4o, Claude 等），享受顶级逻辑推理能力。
+*   **🖼️ 动态多图输入**：API 节点会随连接自动增加图片输入口，并按顺序将多张图片或图片批次发送给视觉模型。
 *   **⚡ 极致的显存优化 (VRAM Optimization)**：专为 ComfyUI 环境定制的显存调度机制。在检索和文本生成结束后，**自动卸载**语言模型与 Embedding 模型，确保您后续的图像生成工作流（如 SDXL, FLUX）拥有充足显存。
 *   **🗂️ 预制语料系统**：支持从特定系统目录极速加载海量预制文本、设定集与数据集。
 *   **🌍 原生国际化支持**：严格遵循 ComfyUI 官方 i18n 标准，内置完美的中文（简体）与英文界面双语切换。
@@ -35,9 +36,9 @@
 | 📄 `EasyRAG - Document Loader` | 核心文档加载器。支持上传和解析 input 目录下的多种格式文档。 |
 | 📚 `Rag 预制文档加载` | 从系统配置的原始语料库（Original Corpus）中批量加载数据。 |
 | 🏗️ `EasyRAG - Vector Store Builder (FAISS)` | 将文档切片（Chunking）并使用 Embedding 模型构建、持久化本地向量数据库。 |
-| 💬 `EasyRAG - LM Studio API (Advanced)` | 调用本地 LM Studio 服务的高级问答节点，支持 RAG 检索、多模态图片输入与精细参数调节。 |
-| 💬 `EasyRAG - LM Studio API (Simple)` | 极简版的本地对话节点，适合快速搭建轻量级工作流。 |
-| ☁️ `EasyRAG - 外部 API (高级)` | **[NEW]** 通过 API Key 调用云端大模型（DeepSeek等），将本地向量库的知识与云端最强 AI 结合。 |
+| 💬 `EasyRAG - LM Studio API (Advanced)` | 调用本地 LM Studio 服务的高级问答节点，支持 RAG 检索、动态多图输入与精细参数调节。 |
+| 💬 `EasyRAG - LM Studio API (Simple)` | 极简版的本地对话节点，支持动态多图输入，适合快速搭建轻量级工作流。 |
+| ☁️ `EasyRAG - 外部 API (高级)` | 通过 API Key 调用兼容 OpenAI 接口的云端多模态模型，支持 RAG 与动态多图输入。 |
 
 ---
 

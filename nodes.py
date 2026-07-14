@@ -26,7 +26,9 @@ from .i18n import t
 SUPPORTED_EXTENSIONS = {".txt", ".md", ".json", ".pdf"}
 
 PREBUILT_SOURCE_PLUGIN = "plugin"
+PREBUILT_SOURCE_MODELS_RAG = "models_rag"
 PREBUILT_SOURCE_ORIGINAL = "original"
+PREBUILT_RESERVED_MODEL_DIRS = {"vectordb"}
 
 _TORCH_MODULE = None
 _TORCH_IMPORT_ATTEMPTED = False
@@ -138,10 +140,21 @@ def _list_prebuilt_docs_for_combo() -> List[str]:
         source_roots = _get_prebuilt_source_roots()
         items: List[str] = []
         seen = set()
-        for root in source_roots.values():
+        listing_sources = (
+            PREBUILT_SOURCE_PLUGIN,
+            PREBUILT_SOURCE_MODELS_RAG,
+        )
+        for source in listing_sources:
+            root = source_roots[source]
             if not root.exists():
                 continue
             for item in root.iterdir():
+                if (
+                    source == PREBUILT_SOURCE_MODELS_RAG
+                    and item.is_dir()
+                    and item.name.casefold() in PREBUILT_RESERVED_MODEL_DIRS
+                ):
+                    continue
                 name = f"📂 {item.name}" if item.is_dir() else f"📄 {item.name}"
                 if item.is_file() and not _is_supported_doc_file(str(item)):
                     continue
@@ -204,9 +217,11 @@ def _get_prebuilt_source_roots() -> Dict[str, Path]:
     else:
         comfy_models_root = Path(__file__).resolve().parents[2] / "models"
 
-    original_corpus_root = comfy_models_root / "RAG" / "Original"
+    models_rag_root = comfy_models_root / "RAG"
+    original_corpus_root = models_rag_root / "Original"
     return {
         PREBUILT_SOURCE_PLUGIN: plugin_rag_root,
+        PREBUILT_SOURCE_MODELS_RAG: models_rag_root,
         PREBUILT_SOURCE_ORIGINAL: original_corpus_root,
     }
 
@@ -235,14 +250,24 @@ def _resolve_prebuilt_target(document: str) -> Path:
             root = source_roots[maybe_source]
             candidates = [root]
 
-    # Default resolution order: plugin rag first, then models/RAG/Original.
+    # Default resolution order supports direct models/RAG files while keeping
+    # older workflows that selected a file from models/RAG/Original working.
     if not candidates:
-        candidates = [source_roots[PREBUILT_SOURCE_PLUGIN], source_roots[PREBUILT_SOURCE_ORIGINAL]]
+        candidates = [
+            source_roots[PREBUILT_SOURCE_PLUGIN],
+            source_roots[PREBUILT_SOURCE_MODELS_RAG],
+            source_roots[PREBUILT_SOURCE_ORIGINAL],
+        ]
 
     relative = relative.lstrip("/\\")
     normalized = relative.rstrip("/\\")
     for root in candidates:
         if not root.exists():
+            continue
+        if (
+            root == source_roots[PREBUILT_SOURCE_MODELS_RAG]
+            and normalized.replace("\\", "/").split("/", 1)[0].casefold() in PREBUILT_RESERVED_MODEL_DIRS
+        ):
             continue
         target = (root / normalized).resolve()
         root_resolved = root.resolve()
@@ -251,10 +276,10 @@ def _resolve_prebuilt_target(document: str) -> Path:
         if target.exists():
             return target
 
-    # If both roots are missing, give an explicit source-folder hint.
-    if not source_roots[PREBUILT_SOURCE_PLUGIN].exists() and not source_roots[PREBUILT_SOURCE_ORIGINAL].exists():
+    # If every source root is missing, give an explicit source-folder hint.
+    if not any(root.exists() for root in source_roots.values()):
         raise FileNotFoundError(
-            t("Prebuilt source folder not found: {folder}", folder=str(source_roots[PREBUILT_SOURCE_ORIGINAL]))
+            t("Prebuilt source folder not found: {folder}", folder=str(source_roots[PREBUILT_SOURCE_MODELS_RAG]))
         )
 
     raise FileNotFoundError(t("Invalid prebuilt path: {path}", path=raw))
@@ -888,7 +913,7 @@ class PrebuiltLoaderNode:
             "required": {
                 "document": (
                     _list_prebuilt_docs_for_combo(),
-                    {"tooltip": t("Select a prebuilt document or folder from rag and models/RAG/Original"), "label": t("document")}
+                    {"tooltip": t("Select a prebuilt document or folder from rag and models/RAG"), "label": t("document")}
                 ),
             }
         }

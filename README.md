@@ -84,10 +84,14 @@ ComfyUI/models/embeddings/
 ComfyUI/models/RAG/VectorDB/<你的索引名称>/
 ```
 
-### 3. 预制语料库 (Original Corpus)
-供 `Rag 预制文档加载` 节点使用，方便你统一管理小说、设定集、提示词库等：
+### 3. 预制语料库 (Prebuilt Corpus)
+供 `Rag 预制文档加载` 节点使用。文档或文件夹可以直接放在 `RAG` 根目录；旧版的 `Original` 子目录仍然兼容。`VectorDB` 是向量索引专用目录，不会显示为预制文档：
 ```text
-ComfyUI/models/RAG/Original/
+ComfyUI/models/RAG/
+├── 你的提示词库.txt
+├── 你的资料文件夹/
+├── Original/          # 兼容旧版目录
+└── VectorDB/          # 向量索引目录，不作为文档读取
 ```
 
 ### 4. 系统提示词预设 (System Prompts)

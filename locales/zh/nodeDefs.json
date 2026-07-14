@@ -103,7 +103,7 @@
   },
   "RagPromptPrebuiltLoader": {
     "display_name": "Rag 预制文档加载",
-    "description": "从本地 rag 文件夹和 ComfyUI/models/RAG/Original 中选择预制数据集用于构建 RAG。",
+    "description": "从插件 rag 文件夹或 ComfyUI/models/RAG 中选择预制数据集；继续兼容 Original 子目录。",
     "inputs": {
       "document": { "name": "文档" }
     },

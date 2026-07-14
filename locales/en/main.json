@@ -50,7 +50,7 @@
   "Run directly": "Run directly",
   "Select a document (txt/json/md/pdf). Use the Upload Document button below to put a file into the input folder first.": "Select a document (txt/json/md/pdf). Use the Upload Document button below to put a file into the input folder first.",
   "Select a local embedding model": "Select a local embedding model",
-  "Select a prebuilt document or folder from rag and models/RAG/Original": "Select a prebuilt document or folder from rag and models/RAG/Original",
+  "Select a prebuilt document or folder from rag and models/RAG": "Select a prebuilt document or folder from rag and models/RAG",
   "Select an existing vector store": "Select an existing vector store",
   "Streaming off": "Streaming off",
   "Streaming on": "Streaming on",

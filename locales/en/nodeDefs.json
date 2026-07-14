@@ -103,7 +103,7 @@
   },
   "RagPromptPrebuiltLoader": {
     "display_name": "Rag Prebuilt Loader",
-    "description": "Select prebuilt datasets from local rag folder and ComfyUI/models/RAG/Original.",
+    "description": "Select prebuilt datasets from the plugin rag folder or ComfyUI/models/RAG. The Original subfolder remains supported.",
     "inputs": {
       "document": { "name": "document" }
     },

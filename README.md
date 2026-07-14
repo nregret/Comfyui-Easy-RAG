@@ -95,10 +95,12 @@ ComfyUI/models/RAG/
 ```
 
 ### 4. 系统提示词预设 (System Prompts)
-你可以将常用的系统提示词（`txt` 或 `md` 格式）放入以下目录，即可在对话节点的下拉菜单中一键调用：
+你可以将常用的系统提示词（`txt` 或 `md` 格式）放入以下任一目录，即可在 API 对话节点的下拉菜单中调用：
 ```text
 ComfyUI/custom_nodes/Comfyui-Easy-RAG/systemprompt/
+ComfyUI/models/RAG/SystemPrompts/
 ```
+`ComfyUI/models/RAG/SystemPrompts` 的目录名不区分大小写，例如 `systemprompts`、`SYSTEMPROMPTS` 也可以被识别。该目录不会作为普通预制文档读取。
 
 ---
 

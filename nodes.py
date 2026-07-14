@@ -28,7 +28,8 @@ SUPPORTED_EXTENSIONS = {".txt", ".md", ".json", ".pdf"}
 PREBUILT_SOURCE_PLUGIN = "plugin"
 PREBUILT_SOURCE_MODELS_RAG = "models_rag"
 PREBUILT_SOURCE_ORIGINAL = "original"
-PREBUILT_RESERVED_MODEL_DIRS = {"vectordb"}
+MODELS_SYSTEM_PROMPTS_DIRNAME = "systemprompts"
+PREBUILT_RESERVED_MODEL_DIRS = {"vectordb", MODELS_SYSTEM_PROMPTS_DIRNAME}
 
 _TORCH_MODULE = None
 _TORCH_IMPORT_ATTEMPTED = False
@@ -168,18 +169,24 @@ def _list_prebuilt_docs_for_combo() -> List[str]:
 
 
 def _list_system_prompt_files_for_combo() -> List[str]:
-    """列出 systemprompt 文件夹中的文件，第一个选项为'自定义'"""
-    systemprompt_root = Path(__file__).resolve().parent / "systemprompt"
+    """列出插件与 models/RAG/SystemPrompts 中的提示词文件。"""
     items = ["🛠️ 自定义"]  # 第一个选项
-    
+    seen = set()
+
     try:
-        if systemprompt_root.exists():
-            for item in systemprompt_root.iterdir():
+        for systemprompt_root in _get_system_prompt_roots():
+            if not systemprompt_root.exists():
+                continue
+            for item in sorted(systemprompt_root.iterdir(), key=lambda path: path.name.casefold()):
                 if item.is_file() and item.suffix.lower() in {".txt", ".md"}:
+                    normalized_name = item.name.casefold()
+                    if normalized_name in seen:
+                        continue
+                    seen.add(normalized_name)
                     items.append(f"📄 {item.name}")
     except:
         pass
-    
+
     return items if len(items) > 1 else ["🛠️ 自定义"]
 
 
@@ -195,28 +202,53 @@ def _resolve_system_prompt_file(selection: str) -> str:
             normalized_selection = normalized_selection[len(prefix):].strip()
             break
     
-    systemprompt_root = Path(__file__).resolve().parent / "systemprompt"
-    file_path = systemprompt_root / normalized_selection
-    
-    try:
-        if file_path.exists():
-            return file_path.read_text(encoding="utf-8").strip()
-    except Exception as e:
-        print(f"⚠️ [EasyRAG] 读取系统提示词文件失败: {e}")
+    for systemprompt_root in _get_system_prompt_roots():
+        try:
+            root_resolved = systemprompt_root.resolve()
+            file_path = (systemprompt_root / normalized_selection).resolve()
+            if root_resolved not in file_path.parents:
+                continue
+            if file_path.is_file() and file_path.suffix.lower() in {".txt", ".md"}:
+                return file_path.read_text(encoding="utf-8").strip()
+        except Exception as e:
+            print(f"⚠️ [EasyRAG] 读取系统提示词文件失败: {e}")
     
     return ""  # 文件不存在或读取失败时回退到自定义
+
+
+def _get_comfy_models_root() -> Path:
+    models_dir = getattr(folder_paths, "models_dir", None)
+    if models_dir:
+        return Path(models_dir)
+    return Path(__file__).resolve().parents[2] / "models"
+
+
+def _get_system_prompt_roots() -> List[Path]:
+    roots = [Path(__file__).resolve().parent / "systemprompt"]
+    models_rag_root = _get_comfy_models_root() / "RAG"
+    if not models_rag_root.exists():
+        return roots
+
+    try:
+        matches = sorted(
+            (
+                item
+                for item in models_rag_root.iterdir()
+                if item.is_dir() and item.name.casefold() == MODELS_SYSTEM_PROMPTS_DIRNAME
+            ),
+            key=lambda path: path.name,
+        )
+        roots.extend(matches)
+    except OSError:
+        pass
+    return roots
 
 
 def _get_prebuilt_source_roots() -> Dict[str, Path]:
     plugin_rag_root = Path(__file__).resolve().parent / "rag"
     plugin_rag_root.mkdir(parents=True, exist_ok=True)
 
-    models_dir = getattr(folder_paths, "models_dir", None)
-    if models_dir:
-        comfy_models_root = Path(models_dir)
-    else:
-        comfy_models_root = Path(__file__).resolve().parents[2] / "models"
-
+    comfy_models_root = _get_comfy_models_root()
     models_rag_root = comfy_models_root / "RAG"
     original_corpus_root = models_rag_root / "Original"
     return {
